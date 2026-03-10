@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Travel-AI Premium</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Ocultar barra de desplazamiento para los botones rápidos */
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="flex flex-col h-screen bg-slate-950 text-slate-200 font-sans">
+
+    <!-- HEADER PREMIUM -->
+    <header class="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md flex-shrink-0">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center shadow-lg shadow-amber-500/20">
+                <i data-lucide="navigation" class="text-slate-900 w-6 h-6"></i>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold text-white tracking-wide">Travel-AI <span class="text-amber-500 font-light">Premium</span></h1>
+                <div class="flex items-center gap-1 text-xs text-slate-400">
+                    <i data-lucide="map-pin" class="text-emerald-400 w-3 h-3"></i>
+                    <span>Cambrils, Cataluña (Proximidad Prioritaria)</span>
+                </div>
+            </div>
+        </div>
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800 text-xs font-medium border border-slate-700">
+            <i data-lucide="clock" class="text-amber-500 w-3.5 h-3.5"></i>
+            <span>GPS Activo</span>
+        </div>
+    </header>
+
+    <!-- CHAT ÁREA -->
+    <main id="chat-container" class="flex-1 overflow-y-auto p-4 space-y-6">
+        <!-- Los mensajes se insertarán aquí dinámicamente -->
+    </main>
+
+    <!-- INDICADOR DE CARGA (Oculto por defecto) -->
+    <div id="loading-indicator" class="hidden px-4 pb-2 items-center gap-3 text-slate-500 ml-2">
+        <i data-lucide="loader-2" class="animate-spin text-amber-500 w-4.5 h-4.5"></i>
+        <span class="text-sm font-medium animate-pulse">Procesando GPS y datos en tiempo real...</span>
+    </div>
+
+    <!-- FOOTER & INPUT -->
+    <footer class="p-4 border-t border-slate-800 bg-slate-900/80 backdrop-blur-md flex-shrink-0">
+        
+        <!-- Quick actions -->
+        <div id="quick-actions" class="flex gap-2 overflow-x-auto pb-3 scrollbar-hide">
+            <!-- Los botones se generarán con JS -->
+        </div>
+
+        <form id="chat-form" class="relative flex items-center">
+            <input 
+                type="text" 
+                id="chat-input"
+                autocomplete="off"
+                placeholder="Ej: ¿Dónde puedo comer algo rápido por aquí?"
+                class="w-full bg-slate-950 border border-slate-700 rounded-full py-4 pl-6 pr-14 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/50 transition-all shadow-inner"
+            >
+            <button 
+                type="submit" 
+                id="submit-btn"
+                disabled
+                class="absolute right-2 top-1/2 -translate-y-1/2 p-2.5 bg-amber-500 hover:bg-amber-400 disabled:bg-slate-800 disabled:text-slate-600 text-slate-900 rounded-full transition-colors shadow-lg"
+            >
+                <i data-lucide="send" class="w-4.5 h-4.5" id="send-icon"></i>
+            </button>
+        </form>
+    </footer>
+
+    <script>
+        // === CONFIGURACIÓN DE LA API ===
+        const apiKey = ""; // La clave API será inyectada por el entorno
+
+        const SYSTEM_PROMPT = `
+ROL: Experto en Logística y Planificación de Viajes Premium.
+CRITERIO: "Prioridad Proximidad" (GPS-Based). Cambiar a "Calidad" solo si el usuario lo pide.
+REGLA DE ORO: Responde únicamente a la categoría solicitada. Prohibido el "Cross-selling" de información no pedida (ej. no dar clima si piden comida).
+CONTEXTO ACTUAL: Ubicación: Cambrils, Cataluña, España. Fecha/Hora: 3 de Marzo de 2026, 11:30 AM.
+
+🛠️ LÓGICA DE RESPUESTA POR CATEGORÍA
+1. 📍 Lugares y Museos -> Formato: [Nombre] | ESTADO: [🟢 Abierto / 🔴 Cerrado] | Cierre: [HH:MM] | Entrada: [💰 Precio]. Nota de distancia: Si > 5km, añadir: ⚠️ Nota: Este lugar se encuentra a [X] km de ti.
+2. 🏛️ Historia y Curiosidades -> Breve Reseña: Origen y relevancia (máx. 3 frases). Dato Curioso: Anécdota. Arquitectura: Estilo y materiales.
+3. 🍴 Gastronomía -> Filtro: Solo mostrar locales con cocina abierta AHORA. Contenido: 2-3 opciones por proximidad. Precio: Indicar 💰 [Precio medio/persona].
+4. 🏨 Alojamiento -> Filtro: 2 mejores opciones Calidad-Precio. Contenido: 💰 [Precio/noche] | ⭐ [Lo más destacado].
+5. 🚗 Coche y Logística -> Ruta: La más rápida en tiempo real. Navegación: Instrucciones paso a paso. Parking: Indicar 🅿️ [Nombre o zona].
+6. 🚌 Transporte Público -> Contenido: Líneas de bus/tren y horarios de salida inmediatos.
+7. 🚨 Emergencias -> Contenido: Hospital o CAP más cercano con dirección y teléfono.
+8. ☁️ Previsión del Tiempo -> Contenido: Estado del cielo y temperatura para las próximas 6 horas.
+
+📋 PROTOCOLO DE FORMATO OBLIGATORIO
+Tono: Profesional, directo, sin relleno.
+Iconografía Estricta: 📍, 🟢, 🔴, 💰, 🏛️, 🏨, ⭐, 🚗, 🅿️, 🚌, 🚨, ☁️.
+Manejo de Errores: Si no hay datos, responde: "Información no disponible para esta ubicación en tiempo real".
+`;
+
+        const RESPONSE_SCHEMA = {
+            type: "OBJECT",
+            properties: {
+                categoria_detectada: { type: "STRING", description: "La categoría principal identificada" },
+                prioridad: { type: "STRING", description: "Proximidad o Calidad" },
+                respuesta_visual: {
+                    type: "OBJECT",
+                    properties: {
+                        titulo: { type: "STRING" },
+                        items: {
+                            type: "ARRAY",
+                            items: {
+                                type: "OBJECT",
+                                properties: {
+                                    nombre: { type: "STRING" },
+                                    estado: { type: "STRING", description: "Icono 🟢 o 🔴 y texto" },
+                                    horario_cierre: { type: "STRING" },
+                                    precio_medio: { type: "STRING", description: "Incluir icono 💰" },
+                                    distancia: { type: "STRING" },
+                                    detalles: { type: "STRING", description: "Reseñas, datos curiosos, estrellas, instrucciones de ruta, etc." },
+                                    coordenadas: {
+                                        type: "OBJECT",
+                                        properties: { lat: { type: "NUMBER" }, lng: { type: "NUMBER" } }
+                                    }
+                                }
+                            }
+                        },
+                        nota_distancia: { type: "STRING", description: "Mensaje de advertencia si es > 5km, o null", nullable: true }
+                    }
+                },
+                texto_plano: { type: "STRING", description: "La respuesta de texto estricta siguiendo la Regla de Oro y los iconos exactos." },
+                error: { type: "STRING", description: "Mensaje de error si la información no está disponible", nullable: true }
+            },
+            required: ["categoria_detectada", "prioridad", "respuesta_visual", "texto_plano"]
+        };
+
+        // Estado de la app
+        let messages = [
+            {
+                id: '1',
+                role: 'ai',
+                text: "Sistema Inicializado. Motor Premium Travel-AI activo. Ubicación actual fijada. ¿Qué necesitas consultar en este momento?",
+                json: null
+            }
+        ];
+        let isLoading = false;
+
+        // Elementos del DOM
+        const chatContainer = document.getElementById('chat-container');
+        const chatForm = document.getElementById('chat-form');
+        const chatInput = document.getElementById('chat-input');
+        const submitBtn = document.getElementById('submit-btn');
+        const sendIcon = document.getElementById('send-icon');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const quickActionsContainer = document.getElementById('quick-actions');
+
+        // Sugerencias rápidas
+        const quickQueries = [
+            { icon: 'utensils', label: "¿Dónde puedo comer algo rápido por aquí?" },
+            { icon: 'landmark', label: "Museos abiertos ahora" },
+            { icon: 'shield-alert', label: "Necesito un hospital urgente" },
+            { icon: 'cloud-sun', label: "¿Va a llover en las próximas horas?" }
+        ];
+
+        // Función auxiliar para escapar HTML y prevenir XSS
+        function escapeHTML(str) {
+            return str.replace(/[&<>'"]/g, 
+                tag => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    "'": '&#39;',
+                    '"': '&quot;'
+                }[tag])
+            );
+        }
+
+        // Obtener color por categoría
+        function getCategoryColor(category) {
+            const map = {
+                'Gastronomía': 'text-orange-400',
+                'Lugares y Museos': 'text-purple-400',
+                'Alojamiento': 'text-indigo-400',
+                'Emergencias': 'text-red-500',
+                'Previsión del Tiempo': 'text-sky-400',
+                'Coche y Logística': 'text-emerald-400',
+                'Transporte Público': 'text-blue-400',
+                'Historia y Curiosidades': 'text-amber-600'
+            };
+            return map[category] || 'text-gray-400';
+        }
+
+        // Renderizar botones de acciones rápidas
+        function renderQuickActions() {
+            quickQueries.forEach(q => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = "flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-amber-500/50 transition-all rounded-full text-xs font-medium text-slate-300 disabled:opacity-50 quick-btn";
+                btn.innerHTML = `<i data-lucide="${q.icon}" class="w-4 h-4"></i> ${q.label}`;
+                btn.onclick = () => handleSend(q.label);
+                quickActionsContainer.appendChild(btn);
+            });
+            lucide.createIcons();
+        }
+
+        // Añadir mensaje al DOM
+        function appendMessage(msg) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`;
+            
+            if (msg.role === 'user') {
+                msgDiv.innerHTML = `
+                    <div class="max-w-[80%] bg-slate-800 text-white rounded-2xl rounded-tr-sm px-5 py-3 shadow-md border border-slate-700">
+                        ${escapeHTML(msg.text)}
+                    </div>
+                `;
+            } else {
+                let visualHTML = '';
+                
+                // Si hay JSON y tiene items para mostrar visualmente
+                if (msg.json && msg.json.respuesta_visual && msg.json.respuesta_visual.items && msg.json.respuesta_visual.items.length > 0) {
+                    const categoryColor = getCategoryColor(msg.json.categoria_detectada);
+                    
+                    let itemsHTML = msg.json.respuesta_visual.items.map(item => `
+                        <div class="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4 flex flex-col gap-2 hover:bg-slate-800/60 transition-colors">
+                            <div class="flex justify-between items-start">
+                                <h4 class="font-medium text-amber-500">${escapeHTML(item.nombre || '')}</h4>
+                                ${item.estado ? `<span class="text-xs font-medium bg-slate-950 px-2 py-1 rounded border border-slate-800">${escapeHTML(item.estado)}</span>` : ''}
+                            </div>
+                            
+                            <div class="flex flex-wrap gap-2 text-sm text-slate-300">
+                                ${item.horario_cierre ? `<span class="flex items-center gap-1"><i data-lucide="clock" class="w-3.5 h-3.5"></i> ${escapeHTML(item.horario_cierre)}</span>` : ''}
+                                ${item.precio_medio ? `<span class="flex items-center gap-1 font-mono text-emerald-400">${escapeHTML(item.precio_medio)}</span>` : ''}
+                                ${item.distancia ? `<span class="flex items-center gap-1 opacity-75"><i data-lucide="map-pin" class="w-3.5 h-3.5"></i> ${escapeHTML(item.distancia)}</span>` : ''}
+                            </div>
+                            
+                            ${item.detalles ? `
+                                <p class="text-sm text-slate-400 mt-1 leading-relaxed border-t border-slate-700/50 pt-2">
+                                    ${escapeHTML(item.detalles)}
+                                </p>
+                            ` : ''}
+                        </div>
+                    `).join('');
+
+                    let notaDistanciaHTML = '';
+                    if (msg.json.respuesta_visual.nota_distancia) {
+                        notaDistanciaHTML = `
+                            <div class="mt-4 p-3 bg-amber-950/30 border border-amber-900/50 rounded-lg text-sm text-amber-400 flex gap-2">
+                                <span>⚠️</span> ${escapeHTML(msg.json.respuesta_visual.nota_distancia)}
+                            </div>
+                        `;
+                    }
+
+                    visualHTML = `
+                        <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                            <div class="px-4 py-3 bg-slate-800/50 border-b border-slate-800 flex justify-between items-center">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-bold uppercase tracking-wider ${categoryColor}">
+                                        ${escapeHTML(msg.json.categoria_detectada || 'Info')}
+                                    </span>
+                                    <span class="text-slate-500 text-xs px-2 py-0.5 rounded-full bg-slate-950 border border-slate-800">
+                                        ${escapeHTML(msg.json.prioridad || '')}
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="p-4">
+                                <h3 class="text-lg font-semibold text-white mb-4">${escapeHTML(msg.json.respuesta_visual.titulo || '')}</h3>
+                                <div class="grid gap-3 md:grid-cols-2">
+                                    ${itemsHTML}
+                                </div>
+                                ${notaDistanciaHTML}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // Texto plano (respaldo)
+                const textHTML = `
+                    <div class="flex items-start gap-3">
+                        <div class="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center flex-shrink-0 mt-1">
+                            🤖
+                        </div>
+                        <div class="bg-slate-900/80 rounded-2xl rounded-tl-sm px-5 py-4 border border-slate-800/50 shadow-sm font-mono text-sm text-slate-300 whitespace-pre-line leading-relaxed">
+                            ${escapeHTML(msg.text)}
+                        </div>
+                    </div>
+                `;
+
+                msgDiv.innerHTML = `<div class="max-w-[90%] w-full space-y-3">${visualHTML}${textHTML}</div>`;
+            }
+
+            chatContainer.appendChild(msgDiv);
+            lucide.createIcons();
+            scrollToBottom();
+        }
+
+        function scrollToBottom() {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function updateUIState() {
+            chatInput.disabled = isLoading;
+            submitBtn.disabled = isLoading || chatInput.value.trim() === '';
+            
+            const quickBtns = document.querySelectorAll('.quick-btn');
+            quickBtns.forEach(btn => btn.disabled = isLoading);
+
+            if (isLoading) {
+                loadingIndicator.classList.remove('hidden');
+                loadingIndicator.classList.add('flex');
+            } else {
+                loadingIndicator.classList.add('hidden');
+                loadingIndicator.classList.remove('flex');
+            }
+            
+            if (chatInput.value.trim() && !isLoading) {
+                sendIcon.classList.add('translate-x-0.5');
+            } else {
+                sendIcon.classList.remove('translate-x-0.5');
+            }
+        }
+
+        // Llamada a la API de Gemini
+        async function fetchGeminiResponse(query) {
+            const delays = [1000, 2000, 4000, 8000, 16000];
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+            const payload = {
+                contents: [{ role: "user", parts: [{ text: query }] }],
+                systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: RESPONSE_SCHEMA,
+                    temperature: 0.2
+                }
+            };
+
+            for (let i = 0; i < delays.length; i++) {
+                try {
+                    const res = await fetch(url, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                    const data = await res.json();
+                    const jsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    
+                    if (jsonText) {
+                        return JSON.parse(jsonText);
+                    } else {
+                        throw new Error("Formato de respuesta inválido");
+                    }
+                } catch (error) {
+                    if (i === delays.length - 1) {
+                        console.error("API call failed after retries:", error);
+                        return null;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, delays[i]));
+                }
+            }
+        }
+
+        // Manejar envío de mensaje
+        async function handleSend(textOverride = null) {
+            const textToSend = textOverride || chatInput.value;
+            if (!textToSend.trim() || isLoading) return;
+
+            // Mostrar mensaje del usuario
+            const userMsg = { id: Date.now().toString(), role: 'user', text: textToSend };
+            messages.push(userMsg);
+            appendMessage(userMsg);
+            
+            chatInput.value = '';
+            isLoading = true;
+            updateUIState();
+
+            try {
+                const jsonResponse = await fetchGeminiResponse(textToSend);
+                
+                let aiMsg;
+                if (jsonResponse) {
+                    aiMsg = {
+                        id: Date.now().toString(),
+                        role: 'ai',
+                        text: jsonResponse.texto_plano,
+                        json: jsonResponse
+                    };
+                } else {
+                    throw new Error("Sin respuesta de la API");
+                }
+                messages.push(aiMsg);
+                appendMessage(aiMsg);
+
+            } catch (error) {
+                const errorMsg = {
+                    id: Date.now().toString(),
+                    role: 'ai',
+                    text: "Información no disponible para esta ubicación en tiempo real. (Error de conexión)",
+                    json: {
+                        categoria_detectada: "Error",
+                        prioridad: "N/A",
+                        respuesta_visual: { titulo: "Error de conexión", items: [] },
+                        texto_plano: "Información no disponible para esta ubicación en tiempo real."
+                    }
+                };
+                messages.push(errorMsg);
+                appendMessage(errorMsg);
+            } finally {
+                isLoading = false;
+                updateUIState();
+                chatInput.focus();
+            }
+        }
+
+        // Event Listeners
+        chatInput.addEventListener('input', updateUIState);
+        chatForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            handleSend();
+        });
+
+        // Inicialización
+        renderQuickActions();
+        lucide.createIcons();
+        appendMessage(messages[0]); // Mostrar mensaje de bienvenida
+        updateUIState();
+
+    </script>
+</body>
+</html>
